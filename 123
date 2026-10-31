@@ -1,0 +1,44 @@
+import sqlite3
+
+con = sqlite3.connect(":memory:")
+con.executescript("""
+CREATE TABLE users(id INTEGER PRIMARY KEY, name TEXT NOT NULL, balance REAL NOT NULL CHECK(balance >= 0));
+CREATE TABLE orders(id INTEGER PRIMARY KEY, buyer_id INTEGER NOT NULL REFERENCES users(id),
+                    seller_id INTEGER NOT NULL REFERENCES users(id),
+                    product_id INTEGER NOT NULL, price REAL NOT NULL CHECK(price > 0));
+
+INSERT INTO users(name, balance) VALUES ('Покупатель', 500), ('Продавец', 0), ('Бедняк', 50);
+""")
+con.commit()
+
+
+def buy(buyer_id: int, seller_id: int, product_id: int, price: float) -> bool:
+    try:
+        with con:  # commit при успехе, rollback при исключении
+            cur = con.execute(
+                "UPDATE users SET balance = balance - ? WHERE id = ? AND balance >= ?",
+                (price, buyer_id, price),
+            )
+            if cur.rowcount == 0:
+                raise ValueError("Недостаточно средств")
+            con.execute(
+                "INSERT INTO orders(buyer_id, seller_id, product_id, price) VALUES (?,?,?,?)",
+                (buyer_id, seller_id, product_id, price),
+            )
+            con.execute("UPDATE users SET balance = balance + ? WHERE id = ?", (price, seller_id))
+        return True
+    except ValueError as e:
+        print("Отказ:", e)
+        return False
+
+
+print("Покупка 1 (успех):", buy(1, 2, 10, 100))
+print("Покупка 2 (не хватает):", buy(3, 2, 10, 100))
+
+print("\nБалансы:")
+for row in con.execute("SELECT id, name, balance FROM users"):
+    print(" ", row)
+
+print("\nЗаказы:")
+for row in con.execute("SELECT * FROM orders"):
+    print(" ", row)
